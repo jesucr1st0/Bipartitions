@@ -2,7 +2,10 @@
 import itertools
 import numpy as np
 
-from src.models.sia import SIA
+import sys
+import os
+sys.path.append(os.path.abspath("src"))
+from models.sia import SIA
 
 
 class Geometric(SIA):
@@ -25,7 +28,9 @@ class Geometric(SIA):
         estados = self.generar_estados()
 
         # 3. Obtener distribución (tensor → vector)
-        P = self.sia_dists_marginales
+        P = np.random.rand(len(estados))
+        P = P / P.sum()
+
 
         # 4. Buscar mejor bipartición
         mejor_costo = float("inf")

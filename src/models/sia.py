@@ -4,16 +4,20 @@ import time
 import numpy as np
 import numpy.typing as NDArray
 
-from src.constants.models import SIA_PREPARATION_TAG
-from src.middlewares.slogger import SafeLogger
-from src.models.core.system import System
+from constants.models import SIA_PREPARATION_TAG
+from middlewares.slogger import SafeLogger
+from models.core.system import System
 
-from src.constants.base import (
+import sys
+import os
+sys.path.append(os.path.abspath("src"))
+
+from constants.base import (
     COLS_IDX,
     FLOAT_ZERO,
     STR_ZERO,
 )
-from src.constants.error import (
+from constants.error import (
     ERROR_ESPACIOS_INCOMPATIBLES,
 )
 

@@ -5,7 +5,7 @@ from src.middlewares.slogger import SafeLogger
 from src.funcs.iit import emd_efecto, ABECEDARY
 from src.middlewares.profile import gestor_perfilado, profile
 from src.funcs.format import fmt_biparticion_q
-from src.models.base.sia import SIA
+from src.models.sia import SIA
 
 from src.models.core.solution import Solution
 from src.constants.models import (
