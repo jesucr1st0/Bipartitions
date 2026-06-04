@@ -1,2 +1,4 @@
-def __init__(self, tpm):
-    super().__init__(tpm)
+from controllers.strategies.geometric import Geometric
+from controllers.strategies.kgeometric import KGeometric
+from controllers.strategies.kqnodes import KQNodes
+from controllers.strategies.qnodes import QNodes
