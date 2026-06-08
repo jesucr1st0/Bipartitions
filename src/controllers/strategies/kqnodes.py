@@ -73,7 +73,7 @@ class KQNodes(SIA):
                     if ncubo.indice in largest
                 ]
                 if X:
-                    profiles = np.column_stack(X)
+                    profiles = np.array(X)
                     labels = KMeans(
                         n_clusters=2, n_init=5, random_state=0
                     ).fit_predict(profiles)
@@ -125,10 +125,10 @@ class KQNodes(SIA):
     def _evaluar_partes(
         self, S, P0, groups
     ):
-        n = len(P0)
-        reconst = np.empty(n, dtype=np.float32)
+        indices = set(S.indices_ncubos)
+        reconst = np.empty(len(P0), dtype=np.float32)
         for g in groups:
-            alc = np.array(sorted(set(range(n)) - g), dtype=np.int8)
+            alc = np.array(sorted(indices - g), dtype=np.int8)
             sp = S.substraer(alc, alc)
             marginal = sp.distribucion_marginal()
             for idx, val in zip(sp.indices_ncubos, marginal):
@@ -138,10 +138,10 @@ class KQNodes(SIA):
     def _refinar_partes(self, S, P0, groups, max_iter=10):
         groups = [set(g) for g in groups]
         k = len(groups)
-        n = len(P0)
+        indices = set(S.indices_ncubos)
         for _ in range(max_iter):
             mejorado = False
-            for v in range(n):
+            for v in indices:
                 idx_actual = next(
                     (i for i, p in enumerate(groups) if v in p), None
                 )

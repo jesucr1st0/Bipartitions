@@ -11,7 +11,7 @@ from controllers.strategies.kgeometric import KGeometric
 from controllers.strategies.kqnodes import KQNodes
 
 EXCEL_PATH = "data/DatosPruebas2026_1.xlsx"
-MAX_CASOS = 5
+MAX_CASOS = 3
 K_VALS = [2]
 ESTRATEGIAS = {
     "KGeometric": KGeometric,
@@ -24,7 +24,8 @@ def probar(sistema: str, k: int):
     print(f"  SISTEMA: {sistema}  k={k}")
     print(f"{'='*60}")
 
-    configs = excel_a_configs(EXCEL_PATH, f"{sistema}-Elementos")
+    hoja = f"{sistema.lstrip('N')}-Elementos"
+    configs = excel_a_configs(EXCEL_PATH, hoja)
     if not configs:
         print("  No se encontraron configuraciones en el Excel")
         return

@@ -45,4 +45,23 @@ class KGeometric(Geometric):
         if all(p for p in partes_h):
             candidatas.add(tuple(partes_h))
 
+        remaining = set(range(n_vars))
+        hier_parts = []
+        for _ in range(k - 1):
+            if len(remaining) <= 1:
+                break
+            sub = sorted(remaining)
+            sub_p = profiles[sub]
+            lbl = KMeans(n_clusters=2, n_init=1, random_state=0).fit_predict(sub_p)
+            a = frozenset(sub[i] for i in range(len(sub)) if lbl[i] == 0)
+            b = remaining - a
+            if not a or not b:
+                a = frozenset({sub[0]})
+                b = remaining - a
+            hier_parts.append(a)
+            remaining = b
+        hier_parts.append(frozenset(remaining))
+        if all(p for p in hier_parts) and len(hier_parts) == k:
+            candidatas.add(tuple(hier_parts))
+
         return list(candidatas)

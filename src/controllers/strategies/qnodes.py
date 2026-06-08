@@ -1,19 +1,19 @@
 import time
 from typing import Union
 import numpy as np
-from src.middlewares.slogger import SafeLogger
-from src.funcs.iit import emd_efecto, ABECEDARY
-from src.middlewares.profile import gestor_perfilado, profile
-from src.funcs.format import fmt_biparticion_q
-from src.models.sia import SIA
+from middlewares.slogger import SafeLogger
+from funcs.iit import emd_efecto, ABECEDARY
+from middlewares.profile import gestor_perfilado, profile
+from funcs.format import fmt_biparticion_q
+from models.sia import SIA
 
-from src.models.core.solution import Solution
-from src.constants.models import (
+from models.core.solution import Solution
+from constants.models import (
     QNODES_ANALYSIS_TAG,
     QNODES_LABEL,
     QNODES_STRAREGY_TAG,
 )
-from src.constants.base import (
+from constants.base import (
     COLS_IDX,
     INT_ZERO,
     TYPE_TAG,
@@ -23,7 +23,7 @@ from src.constants.base import (
     EFFECT,
     ACTUAL,
 )
-from src.models.base.application import aplicacion
+from models.base.application import aplicacion
 
 
 class QNodes(SIA):

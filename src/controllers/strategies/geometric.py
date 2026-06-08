@@ -172,11 +172,11 @@ class Geometric(SIA):
         P0: NDArray[np.float32],
         partes: tuple[frozenset, ...],
     ) -> tuple[float, NDArray[np.float32]]:
-        n = len(P0)
-        reconst = np.empty(n, dtype=np.float32)
+        indices = set(S.indices_ncubos)
+        reconst = np.empty(len(P0), dtype=np.float32)
         for parte in partes:
             alc = np.array(
-                sorted(set(range(n)) - parte), dtype=np.int8
+                sorted(indices - parte), dtype=np.int8
             )
             sp = S.substraer(alc, alc)
             marginal = sp.distribucion_marginal()
@@ -194,10 +194,10 @@ class Geometric(SIA):
         max_iter: int = 10,
     ) -> tuple[frozenset, ...]:
         partes = [set(p) for p in partes]
-        n = len(P0)
+        indices = set(S.indices_ncubos)
         for _ in range(max_iter):
             mejorado = False
-            for v in range(n):
+            for v in indices:
                 idx_actual = next(
                     (i for i, p in enumerate(partes) if v in p), None
                 )
