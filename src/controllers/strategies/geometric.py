@@ -3,7 +3,6 @@ from itertools import combinations
 
 import numpy as np
 from numpy.typing import NDArray
-
 from sklearn.cluster import KMeans
 
 from funcs.iit import emd_efecto
@@ -15,7 +14,7 @@ from models.sia import SIA
 class Geometric(SIA):
     def __init__(self, tpm: np.ndarray):
         super().__init__(tpm)
-        self._T: NDArray[np.float64] | None = None
+        self._T: NDArray[np.float32] | None = None
 
     def aplicar_estrategia(
         self,
@@ -66,6 +65,8 @@ class Geometric(SIA):
                 mejor_dist = dist
 
         mejores_partes = self._refinar_kparticion(S, P0, mejores_partes, k)
+        # Recalcular pérdida final tras refinamiento
+        mejor_perdida, mejor_dist = self._evaluar_kparticion(S, P0, mejores_partes)
 
         fmt = self._fmt_partes(mejores_partes)
         return Solution(
@@ -79,90 +80,178 @@ class Geometric(SIA):
         )
 
     def _extraer_valores(self, S: System) -> list[np.ndarray]:
-        n_states = 1 << len(S.dims_ncubos)
         return [
-            ncubo.data.flatten().copy().astype(np.float64)
+            ncubo.data.flatten().copy().astype(np.float32)
             for ncubo in S.ncubos
         ]
 
     def _calcular_tabla_costos(
         self, X: list[np.ndarray]
-    ) -> NDArray[np.float64]:
-        n_vars = len(X)
+    ) -> NDArray[np.float32]:
+        """
+        Calcula la tabla de costos T usando la fórmula del documento (ec. 3.1):
+
+            t(i,j) = gamma * (|X[i] - X[j]| + sum_{k in N(i,j)} t(k,j))
+
+        donde gamma = 2^(-d_H(i,j))  —  DECRECE con la distancia Hamming.
+
+        Implementación vectorizada con numpy (float32) para mayor velocidad.
+        Para n<=12 usa matrices densas. Para n>12 cae al BFS original.
+        """
+        n_vars   = len(X)
         n_states = len(X[0])
-        n_bits = int(np.log2(n_states))
-        T = np.zeros((n_vars, n_states, n_states), dtype=np.float64)
+        n_bits   = int(np.log2(n_states))
+
+        # Para sistemas grandes la matriz densa no cabe en memoria
+        if n_bits > 12:
+            return self._calcular_tabla_costos_bfs(X)
+
+        # ── Precalcular distancias Hamming ──────────────────────────────
+        states   = np.arange(n_states, dtype=np.int32)
+        popcount = np.array([bin(x).count('1') for x in range(n_states)],
+                            dtype=np.int8)
+        xor_m    = states[:, None] ^ states[None, :]   # (n_states, n_states)
+        H        = popcount[xor_m]                     # distancias Hamming
+
+        # Matriz de adyacencia directa (distancia 1)
+        adj1 = (H == 1).astype(np.float32)             # (n_states, n_states)
+
+        T = np.zeros((n_vars, n_states, n_states), dtype=np.float32)
+
+        for v in range(n_vars):
+            xv   = X[v].astype(np.float32)
+            diff = np.abs(xv[:, None] - xv[None, :])  # |X[i]-X[j]|
+            Tv   = np.zeros((n_states, n_states), dtype=np.float32)
+
+            for d in range(1, n_bits + 1):
+                gamma  = np.float32(2.0 ** (-d))
+                mask_d = (H == d)
+                # accum[i,j] = sum_{k: H[k,j]==d-1, H[i,k]==1} T[k,j]
+                # = (adj1 @ Tv)[i,j]  cuando Tv ya tiene niveles 1..d-1
+                accum = (adj1 @ Tv) if d > 1 else np.zeros_like(Tv)
+                Tv    = np.where(mask_d, gamma * (diff + accum), Tv)
+
+            T[v] = Tv
+
+        return T
+
+    def _calcular_tabla_costos_bfs(
+        self, X: list[np.ndarray]
+    ) -> NDArray[np.float32]:
+        """
+        BFS original corregido (gamma = 2^-dist) para sistemas con n > 12
+        donde la matriz densa no cabe en memoria.
+        """
+        n_vars   = len(X)
+        n_states = len(X[0])
+        n_bits   = int(np.log2(n_states))
+        T = np.zeros((n_vars, n_states, n_states), dtype=np.float32)
 
         for v in range(n_vars):
             xv = X[v]
             for j in range(n_states):
-                T[v, j, j] = 0.0
-                visited = {j}
+                visited  = {j}
                 frontier = {j}
-                dist = 0
+                dist     = 0
                 while frontier:
-                    dist += 1
-                    alpha = 1 << dist
-                    _next = set()
+                    dist  += 1
+                    gamma  = np.float32(2.0 ** (-dist))
+                    _next  = set()
                     for i in frontier:
                         mask = 1
-                        for b in range(n_bits):
-                            k = i ^ mask
-                            if k not in visited:
-                                _next.add(k)
+                        for _ in range(n_bits):
+                            nb = i ^ mask
+                            if nb not in visited:
+                                _next.add(nb)
                             mask <<= 1
-                    for k in _next:
-                        direct = alpha * abs(xv[k] - xv[j])
-                        accum = 0.0
-                        mask = 1
-                        for b in range(n_bits):
-                            nb = k ^ mask
-                            if nb in visited:
-                                accum += T[v, nb, j]
+                    for nb in _next:
+                        direct = abs(float(xv[nb]) - float(xv[j]))
+                        accum  = 0.0
+                        mask   = 1
+                        for _ in range(n_bits):
+                            prev = nb ^ mask
+                            if prev in visited:
+                                accum += float(T[v, prev, j])
                             mask <<= 1
-                        T[v, k, j] = direct + accum
+                        T[v, nb, j] = gamma * (direct + accum)
                     visited.update(_next)
                     frontier = _next
         return T
 
     def _generar_candidatas_2partes(
-        self, T: NDArray[np.float64], n_dims: int
+        self, T: NDArray[np.float32], n_dims: int
     ) -> list[tuple[frozenset, frozenset]]:
-        n_vars = T.shape[0]
+        n_vars   = T.shape[0]
+        n_states = T.shape[1]
+        todos    = set(range(n_dims))
         candidatas = set()
 
+        # 1. Una variable vs el resto
         for v in range(n_vars):
-            candidatas.add((frozenset({v}), frozenset(set(range(n_dims)) - {v})))
+            candidatas.add((frozenset({v}), frozenset(todos - {v})))
 
-        n_clusters = min(n_vars, n_dims)
-        if n_clusters >= 2:
-            n_states = T.shape[1]
-            profiles = T.reshape(n_vars, n_states * n_states)
-            labels = KMeans(n_clusters=2, n_init=10, random_state=0).fit_predict(profiles)
-            parte_a = frozenset(int(i) for i in range(n_vars) if labels[i] == 0)
-            parte_b = frozenset(int(i) for i in range(n_vars) if labels[i] == 1)
-            if parte_a and parte_b:
-                candidatas.add((parte_a, parte_b))
+        # 2. KMeans con múltiples semillas
+        profiles = T.reshape(n_vars, n_states * n_states)
+        for seed in range(5):
+            try:
+                labels = KMeans(n_clusters=2, n_init=5,
+                                random_state=seed).fit_predict(profiles)
+                a = frozenset(int(i) for i in range(n_vars) if labels[i] == 0)
+                b = frozenset(todos - a)
+                if a and b:
+                    candidatas.add((a, b))
+            except Exception:
+                pass
+
+        # 3. Cortes por peso total de transiciones (ordenar variables por costo)
+        pesos = T.sum(axis=(1, 2))
+        orden = np.argsort(pesos)
+        for corte in range(1, n_vars):
+            a = frozenset(int(orden[i]) for i in range(corte))
+            b = frozenset(todos - a)
+            if a and b:
+                candidatas.add((a, b))
+
+        # 4. Pares de variables vs el resto (solo si n <= 15)
+        if n_vars <= 15:
+            for par in combinations(range(n_vars), 2):
+                a = frozenset(par)
+                b = frozenset(todos - a)
+                if b:
+                    candidatas.add((a, b))
 
         return list(candidatas)
 
     def _generar_candidatas_kpartes(
-        self, T: NDArray[np.float64], k: int, n_vars: int
+        self, T: NDArray[np.float32], k: int, n_vars: int
     ) -> list[tuple[frozenset, ...]]:
         candidatas = set()
+        n_states   = T.shape[1]
+        profiles   = T.reshape(n_vars, n_states * n_states)
 
-        n_states = T.shape[1]
-        profiles = T.reshape(n_vars, n_states * n_states)
+        for seed in range(5):
+            try:
+                labels = KMeans(n_clusters=k, n_init=5,
+                                random_state=seed).fit_predict(profiles)
+                partes = tuple(
+                    frozenset(int(i) for i in range(n_vars) if labels[i] == c)
+                    for c in range(k)
+                )
+                if all(p for p in partes):
+                    candidatas.add(partes)
+            except Exception:
+                pass
 
-        n_clusters = min(n_vars, max(k, 3))
-        if n_clusters >= k:
-            labels = KMeans(n_clusters=k, n_init=10, random_state=0).fit_predict(profiles)
-            partes = tuple(
-                frozenset(int(i) for i in range(n_vars) if labels[i] == c)
-                for c in range(k)
-            )
-            if all(p for p in partes):
-                candidatas.add(partes)
+        # Jerarquía por peso
+        pesos = T.sum(axis=(1, 2))
+        orden = list(np.argsort(pesos))
+        chunk = max(1, n_vars // k)
+        partes_h = []
+        for i in range(k - 1):
+            partes_h.append(frozenset(orden[i * chunk:(i + 1) * chunk]))
+        partes_h.append(frozenset(orden[(k - 1) * chunk:]))
+        if all(p for p in partes_h):
+            candidatas.add(tuple(partes_h))
 
         return list(candidatas)
 
@@ -172,18 +261,25 @@ class Geometric(SIA):
         P0: NDArray[np.float32],
         partes: tuple[frozenset, ...],
     ) -> tuple[float, NDArray[np.float32]]:
-        indices = set(S.indices_ncubos)
-        reconst = np.empty(len(P0), dtype=np.float32)
+        """
+        Evalúa una k-partición usando bipartir() igual que QNodes:
+        para cada parte, corta solo el alcance (mecanismo vacío)
+        y toma la distribución marginal con menor EMD.
+        """
+        mejor_perdida = np.inf
+        mejor_dist    = None
+
         for parte in partes:
-            alc = np.array(
-                sorted(indices - parte), dtype=np.int8
-            )
-            sp = S.substraer(alc, alc)
+            alc = np.array(sorted(parte), dtype=np.int8)
+            mec = np.array([], dtype=np.int8)
+            sp      = S.bipartir(alc, mec)
             marginal = sp.distribucion_marginal()
-            for idx, val in zip(sp.indices_ncubos, marginal):
-                reconst[idx] = val
-        perdida = emd_efecto(P0, reconst)
-        return perdida, reconst
+            perdida  = emd_efecto(marginal, P0)
+            if perdida < mejor_perdida:
+                mejor_perdida = perdida
+                mejor_dist    = marginal
+
+        return float(mejor_perdida), mejor_dist
 
     def _refinar_kparticion(
         self,
@@ -193,7 +289,7 @@ class Geometric(SIA):
         k: int,
         max_iter: int = 10,
     ) -> tuple[frozenset, ...]:
-        partes = [set(p) for p in partes]
+        partes  = [set(p) for p in partes]
         indices = set(S.indices_ncubos)
         for _ in range(max_iter):
             mejorado = False
@@ -203,17 +299,21 @@ class Geometric(SIA):
                 )
                 if idx_actual is None or len(partes[idx_actual]) <= 1:
                     continue
-                mejor_perdida, _ = self._evaluar_kparticion(S, P0, tuple(partes))
+                mejor_perdida, _ = self._evaluar_kparticion(
+                    S, P0, tuple(frozenset(p) for p in partes)
+                )
                 mejor_idx = None
                 for idx_nuevo in range(k):
                     if idx_nuevo == idx_actual:
                         continue
                     partes[idx_actual].discard(v)
                     partes[idx_nuevo].add(v)
-                    p, _ = self._evaluar_kparticion(S, P0, tuple(partes))
+                    p, _ = self._evaluar_kparticion(
+                        S, P0, tuple(frozenset(p) for p in partes)
+                    )
                     if p < mejor_perdida:
                         mejor_perdida = p
-                        mejor_idx = idx_nuevo
+                        mejor_idx     = idx_nuevo
                     partes[idx_nuevo].discard(v)
                     partes[idx_actual].add(v)
                 if mejor_idx is not None:
