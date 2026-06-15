@@ -7,10 +7,8 @@ class KGeometric(Geometric):
     def __init__(self, tpm):
         super().__init__(tpm)
 
-    def _generar_candidatas_kpartes(self, T, k, n_vars):
+    def _generar_candidatas_kpartes(self, profiles, pesos, k, n_vars):
         candidatas = set()
-        n_states = T.shape[1]
-        profiles = T.reshape(n_vars, n_states * n_states)
 
         n_clusters = min(n_vars, max(k, 3))
         if n_clusters >= k:

@@ -17,6 +17,17 @@ Uso:
     # Solo k=2 (más rápido)
     python tests/llenar_excel.py N10A --k 2
 """
+# Desactivar colorama (evita recursion depth error en Windows con unicode)
+import sys as _sys
+import os as _os
+_sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+_sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+try:
+    import colorama as _colorama
+    _colorama.deinit()
+except ImportError:
+    pass
+
 # Desactivar profiler antes de todo
 
 
@@ -95,7 +106,7 @@ def correr_estrategia(nombre, cls, tpm, k, cfg):
             )
         return str(r.particion), round(float(r.perdida), 6), round(float(r.tiempo_total), 4)
     except Exception as e:
-        print(f"      ⚠️  {nombre} k={k} ERROR: {e}")
+        print(f"      [WARN] {nombre} k={k} ERROR: {e}")
         return f"ERROR: {e}", None, None
  
  
@@ -110,12 +121,12 @@ def barra_progreso(actual, total, ancho=30):
  
 def procesar_sistema(sistema: str, k_vals: list[int], max_casos: int | None, wb: openpyxl.Workbook):
     if sistema not in SISTEMAS:
-        print(f"  ❌ Sistema '{sistema}' no reconocido. Opciones: {list(SISTEMAS)}")
+        print(f"  [ERROR] Sistema '{sistema}' no reconocido. Opciones: {list(SISTEMAS)}")
         return
  
     nombre_hoja = SISTEMAS[sistema]
     if nombre_hoja not in wb.sheetnames:
-        print(f"  ❌ Hoja '{nombre_hoja}' no encontrada en el Excel.")
+        print(f"  [ERROR] Hoja '{nombre_hoja}' no encontrada en el Excel.")
         return
  
     ws = wb[nombre_hoja]
@@ -124,8 +135,8 @@ def procesar_sistema(sistema: str, k_vals: list[int], max_casos: int | None, wb:
     try:
         tpm = csv_to_tpm(sistema)
     except Exception as e:
-        print(f"  ❌ No se pudo cargar la TPM de '{sistema}': {e}")
-        print(f"     Asegúrate de tener src/.samples/{sistema}.csv")
+        print(f"  [ERROR] No se pudo cargar la TPM de '{sistema}': {e}")
+        print(f"     Asegurate de tener src/.samples/{sistema}.csv")
         return
  
     n = tpm.shape[1]
@@ -136,7 +147,7 @@ def procesar_sistema(sistema: str, k_vals: list[int], max_casos: int | None, wb:
     # Leer configuraciones del Excel
     configs = excel_a_configs(EXCEL_PATH, nombre_hoja)
     if not configs:
-        print("  ❌ No se encontraron casos en el Excel.")
+        print("  [ERROR] No se encontraron casos en el Excel.")
         return
  
     if max_casos:
@@ -170,7 +181,7 @@ def procesar_sistema(sistema: str, k_vals: list[int], max_casos: int | None, wb:
                 # Si ya tiene valor, saltar (para no sobreescribir trabajo previo)
                 celda_actual = ws.cell(row=fila_excel, column=col_part).value
                 if celda_actual is not None and str(celda_actual).startswith("ERROR") is False:
-                    print(f"      ⏭️  {nombre} k={k} ya tiene resultado, saltando.")
+                    print(f"      [SKIP] {nombre} k={k} ya tiene resultado, saltando.")
                     continue
  
                 particion, perdida, tiempo = correr_estrategia(nombre, cls, tpm, k, cfg)
@@ -179,7 +190,7 @@ def procesar_sistema(sistema: str, k_vals: list[int], max_casos: int | None, wb:
                 ws.cell(row=fila_excel, column=col_perd).value  = perdida
                 ws.cell(row=fila_excel, column=col_tiempo).value = tiempo
  
-                estado = "✓" if perdida is not None else "✗"
+                estado = "[OK]" if perdida is not None else "[ERR]"
                 print(f"      {estado} {nombre:<10} k={k}  "
                       f"pérdida={perdida if perdida is not None else 'ERR':>10}  "
                       f"t={tiempo if tiempo is not None else 'ERR':>8}s  "
@@ -190,7 +201,7 @@ def procesar_sistema(sistema: str, k_vals: list[int], max_casos: int | None, wb:
  
     t_total = time.time() - t_total_inicio
     print()
-    print(f"  ✅ {sistema} completado en {t_total:.1f}s  —  Excel guardado.")
+    print(f"  [OK] {sistema} completado en {t_total:.1f}s - Excel guardado.")
  
  
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -206,15 +217,15 @@ def main():
     args = parser.parse_args()
  
     if not os.path.exists(EXCEL_PATH):
-        print(f"❌ No se encontró el Excel en: {EXCEL_PATH}")
+        print(f"[ERROR] No se encontró el Excel en: {EXCEL_PATH}")
         print(f"   Cópialo a la carpeta data/ del proyecto.")
         sys.exit(1)
- 
-    print(f"📂 Excel: {EXCEL_PATH}")
-    print(f"📋 Sistemas: {args.sistemas}")
-    print(f"🔢 k valores: {args.k}")
+
+    print(f"[INFO] Excel: {EXCEL_PATH}")
+    print(f"[INFO] Sistemas: {args.sistemas}")
+    print(f"[INFO] k valores: {args.k}")
     if args.max:
-        print(f"⚠️  Modo prueba: máximo {args.max} casos por sistema")
+        print(f"[INFO] Modo prueba: maximo {args.max} casos por sistema")
  
     wb = openpyxl.load_workbook(EXCEL_PATH)
  
@@ -223,7 +234,7 @@ def main():
  
     wb.save(EXCEL_PATH)
     print()
-    print("✅ Todos los sistemas procesados. Excel final guardado.")
+    print("[OK] Todos los sistemas procesados. Excel final guardado.")
  
  
 if __name__ == "__main__":

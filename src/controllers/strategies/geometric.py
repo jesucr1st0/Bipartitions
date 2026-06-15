@@ -45,13 +45,22 @@ class Geometric(SIA):
             )
 
         X = self._extraer_valores(S)
-        T = self._calcular_tabla_costos(X)
-        self._T = T
+        n_bits = int(np.log2(len(X[0])))
+
+        if n_bits <= 12:
+            T = self._calcular_tabla_costos(X)
+            self._T = T
+            profiles = T.reshape(n_vars, -1)
+            pesos = T.sum(axis=(1, 2))
+        else:
+            self._T = None
+            profiles = np.array(X, dtype=np.float32)
+            pesos = np.var(profiles, axis=1)
 
         if k == 2:
-            candidatas = self._generar_candidatas_2partes(T, n_dims)
+            candidatas = self._generar_candidatas_2partes(profiles, pesos, n_dims)
         else:
-            candidatas = self._generar_candidatas_kpartes(T, k, n_vars)
+            candidatas = self._generar_candidatas_kpartes(profiles, pesos, k, n_vars)
 
         mejor_perdida = np.inf
         mejores_partes = None
@@ -179,10 +188,9 @@ class Geometric(SIA):
         return T
 
     def _generar_candidatas_2partes(
-        self, T: NDArray[np.float32], n_dims: int
+        self, profiles: NDArray[np.float32], pesos: NDArray[np.float32], n_dims: int
     ) -> list[tuple[frozenset, frozenset]]:
-        n_vars   = T.shape[0]
-        n_states = T.shape[1]
+        n_vars   = profiles.shape[0]
         todos    = set(range(n_dims))
         candidatas = set()
 
@@ -191,16 +199,16 @@ class Geometric(SIA):
             candidatas.add((frozenset({v}), frozenset(todos - {v})))
 
         # 2. KMeans con reducción de dimensión
-        profiles = T.reshape(n_vars, n_states * n_states)
-        if profiles.shape[1] > 100:
+        p = profiles
+        if p.shape[1] > 100:
             from sklearn.decomposition import TruncatedSVD
             n_comp = min(20, n_vars - 1)
-            profiles = TruncatedSVD(n_components=n_comp,
-                                    random_state=0).fit_transform(profiles)
+            p = TruncatedSVD(n_components=n_comp,
+                             random_state=0).fit_transform(p)
         for seed in range(5):
             try:
                 labels = KMeans(n_clusters=2, n_init=5,
-                                random_state=seed).fit_predict(profiles)
+                                random_state=seed).fit_predict(p)
                 a = frozenset(int(i) for i in range(n_vars) if labels[i] == 0)
                 b = frozenset(todos - a)
                 if a and b:
@@ -209,26 +217,21 @@ class Geometric(SIA):
                 pass
 
         # 3. Cortes por peso — solo los 5 mejores
-        pesos = T.sum(axis=(1, 2))
         orden = np.argsort(pesos)
-        for corte in range(1, min(6, n_vars)):   # ← era range(1, n_vars)
+        for corte in range(1, min(6, n_vars)):
             a = frozenset(int(orden[i]) for i in range(corte))
             b = frozenset(todos - a)
             if a and b:
                 candidatas.add((a, b))
 
-        # 4. Pares de variables vs el resto (solo si n <= 15)
         # 4. Pares de variables vs el resto
         if n_vars <= 8:
-            # Para n pequeño: todos los pares
             for par in combinations(range(n_vars), 2):
                 a = frozenset(par)
                 b = frozenset(todos - a)
                 if b:
                     candidatas.add((a, b))
         else:
-            # Para n grande: solo los 10 mejores pares según peso de T
-            pesos = T.sum(axis=(1, 2))
             top = np.argsort(pesos)[:6].tolist()
             for par in combinations(top, 2):
                 a = frozenset(par)
@@ -239,11 +242,9 @@ class Geometric(SIA):
         return list(candidatas)
 
     def _generar_candidatas_kpartes(
-        self, T: NDArray[np.float32], k: int, n_vars: int
+        self, profiles: NDArray[np.float32], pesos: NDArray[np.float32], k: int, n_vars: int
     ) -> list[tuple[frozenset, ...]]:
         candidatas = set()
-        n_states   = T.shape[1]
-        profiles   = T.reshape(n_vars, n_states * n_states)
 
         for seed in range(5):
             try:
@@ -259,7 +260,6 @@ class Geometric(SIA):
                 pass
 
         # Jerarquía por peso
-        pesos = T.sum(axis=(1, 2))
         orden = list(np.argsort(pesos))
         chunk = max(1, n_vars // k)
         partes_h = []

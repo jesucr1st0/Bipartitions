@@ -29,9 +29,9 @@ class KQNodes(SIA):
 
         S = self.sia_subsistema
         P0 = self.sia_dists_marginales
-        n = len(S.indices_ncubos)
+        all_indices = set(S.indices_ncubos)
 
-        groups = [set(range(n))]
+        groups = [all_indices.copy()]
         best_overall_loss = np.inf
         best_overall_groups = None
         best_overall_dist = None
@@ -126,13 +126,14 @@ class KQNodes(SIA):
         self, S, P0, groups
     ):
         indices = set(S.indices_ncubos)
+        pos = {int(idx): i for i, idx in enumerate(S.indices_ncubos)}
         reconst = np.empty(len(P0), dtype=np.float32)
         for g in groups:
             alc = np.array(sorted(indices - g), dtype=np.int8)
             sp = S.substraer(alc, alc)
             marginal = sp.distribucion_marginal()
             for idx, val in zip(sp.indices_ncubos, marginal):
-                reconst[idx] = val
+                reconst[pos[int(idx)]] = val
         return emd_efecto(P0, reconst), reconst
 
     def _refinar_partes(self, S, P0, groups, max_iter=10):
