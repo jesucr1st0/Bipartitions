@@ -190,8 +190,13 @@ class Geometric(SIA):
         for v in range(n_vars):
             candidatas.add((frozenset({v}), frozenset(todos - {v})))
 
-        # 2. KMeans con múltiples semillas
+        # 2. KMeans con reducción de dimensión
         profiles = T.reshape(n_vars, n_states * n_states)
+        if profiles.shape[1] > 100:
+            from sklearn.decomposition import TruncatedSVD
+            n_comp = min(20, n_vars - 1)
+            profiles = TruncatedSVD(n_components=n_comp,
+                                    random_state=0).fit_transform(profiles)
         for seed in range(5):
             try:
                 labels = KMeans(n_clusters=2, n_init=5,
@@ -203,18 +208,29 @@ class Geometric(SIA):
             except Exception:
                 pass
 
-        # 3. Cortes por peso total de transiciones (ordenar variables por costo)
+        # 3. Cortes por peso — solo los 5 mejores
         pesos = T.sum(axis=(1, 2))
         orden = np.argsort(pesos)
-        for corte in range(1, n_vars):
+        for corte in range(1, min(6, n_vars)):   # ← era range(1, n_vars)
             a = frozenset(int(orden[i]) for i in range(corte))
             b = frozenset(todos - a)
             if a and b:
                 candidatas.add((a, b))
 
         # 4. Pares de variables vs el resto (solo si n <= 15)
-        if n_vars <= 15:
+        # 4. Pares de variables vs el resto
+        if n_vars <= 8:
+            # Para n pequeño: todos los pares
             for par in combinations(range(n_vars), 2):
+                a = frozenset(par)
+                b = frozenset(todos - a)
+                if b:
+                    candidatas.add((a, b))
+        else:
+            # Para n grande: solo los 10 mejores pares según peso de T
+            pesos = T.sum(axis=(1, 2))
+            top = np.argsort(pesos)[:6].tolist()
+            for par in combinations(top, 2):
                 a = frozenset(par)
                 b = frozenset(todos - a)
                 if b:

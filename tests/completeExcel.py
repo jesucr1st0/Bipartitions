@@ -17,6 +17,9 @@ Uso:
     # Solo k=2 (más rápido)
     python tests/llenar_excel.py N10A --k 2
 """
+# Desactivar profiler antes de todo
+
+
  
 import sys
 import os
@@ -27,6 +30,8 @@ import numpy as np
 import openpyxl
  
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+from models.base.application import aplicacion
+aplicacion.desactivar_profiling()
  
 from funcs.cargar import csv_to_tpm, excel_a_configs, excel_str_a_bits
 from controllers.strategies.geometric import Geometric
