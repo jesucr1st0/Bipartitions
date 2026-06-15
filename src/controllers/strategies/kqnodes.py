@@ -32,9 +32,9 @@ class KQNodes(SIA):
         all_indices = set(S.indices_ncubos)
 
         groups = [all_indices.copy()]
-        best_overall_loss = np.inf
-        best_overall_groups = None
-        best_overall_dist = None
+        ultimo_loss = np.inf
+        ultimo_groups = None
+        ultimo_dist = None
 
         while len(groups) < k:
             largest_idx = max(
@@ -100,23 +100,21 @@ class KQNodes(SIA):
             groups.extend(best_split)
 
             loss, dist = self._evaluar_partes(S, P0, groups)
-            if loss < best_overall_loss:
-                best_overall_loss = loss
-                best_overall_groups = list(groups)
-                best_overall_dist = dist
+            ultimo_loss = loss
+            ultimo_groups = list(groups)
+            ultimo_dist = dist
 
-        best_overall_groups = self._refinar_partes(
-            S, P0, best_overall_groups or groups
-        )
+        grupos_base = ultimo_groups or groups
+        grupos_base = self._refinar_partes(S, P0, grupos_base)
 
-        fmt = self._fmt_partes(best_overall_groups)
+        fmt = self._fmt_partes(grupos_base)
         return Solution(
             estrategia=QNODES_LABEL,
             perdida=self._evaluar_partes(
-                S, P0, best_overall_groups
+                S, P0, grupos_base
             )[0],
             distribucion_subsistema=P0,
-            distribucion_particion=best_overall_dist if best_overall_dist is not None else P0,
+            distribucion_particion=ultimo_dist if ultimo_dist is not None else P0,
             tiempo_total=time.time() - self.sia_tiempo_inicio,
             particion=fmt,
             k=k,
